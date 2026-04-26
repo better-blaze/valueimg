@@ -15,6 +15,7 @@
   const studentPageTitle = document.getElementById("studentPageTitle");
   const studentPageSubtitle = document.getElementById("studentPageSubtitle");
   const studentFooterHint = document.getElementById("studentFooterHint");
+  const logoutBtn = document.getElementById("logoutBtn");
 
   const LS_NAME = "studentDisplayName";
   const LS_ID = "studentId";
@@ -123,14 +124,13 @@
     studentEvalImage.alt = "평가할 작품: " + (targetClass || "").trim() + " (" + index + ")";
   }
 
-  function preloadNextImage(targetClass, currentIndex, totalImages) {
+  function preloadNextImage(targetClass, currentIndex) {
     const tc = (targetClass || "").trim();
     const ci = Number(currentIndex) || 1;
-    const ti = Number(totalImages) || 0;
-    if (!tc || ti < 1 || ci >= ti) {
+    if (!tc) {
       return;
     }
-    const key = tc + "|" + ci + "|" + ti;
+    const key = tc + "|" + ci;
     if (key === lastPreloadKey) {
       return;
     }
@@ -185,14 +185,44 @@
 
   function canReconnectWithStoredPin(s) {
     const savedPin = localStorage.getItem(LS_PIN);
+    const savedName = localStorage.getItem(LS_NAME);
     const sid = getStudentId();
     const serverPin = s.pin != null ? String(s.pin) : null;
     return !!(
       savedPin &&
+      savedName &&
       sid &&
       serverPin != null &&
       String(savedPin) === String(serverPin)
     );
+  }
+
+  function logoutStudent() {
+    if (
+      !confirm(
+        "이 기기에 저장된 입장 정보(PIN·닉네임)를 지우고 로그아웃할까요?"
+      )
+    ) {
+      return;
+    }
+    localStorage.removeItem(LS_NAME);
+    localStorage.removeItem(LS_ID);
+    localStorage.removeItem(LS_PIN);
+    wasEvaluating = false;
+    prevEvalIndex = null;
+    lastPreloadKey = "";
+    pinInput.value = "";
+    nameInput.value = "";
+    sessionRef
+      .once("value")
+      .then(function (snap) {
+        syncSessionUI(snap.val() || {});
+      })
+      .catch(function (err) {
+        console.error(err);
+        showLobbyJoin();
+        resetEvalControls();
+      });
   }
 
   function syncSessionUI(s) {
@@ -204,7 +234,7 @@
       currentIndex = idx;
       showEvalPanel();
       updateEvalImage(s.targetClass, currentIndex);
-      preloadNextImage(s.targetClass, currentIndex, s.totalImages);
+      preloadNextImage(s.targetClass, currentIndex);
 
       const indexChanged = !wasEvaluating || prevEvalIndex !== idx;
       wasEvaluating = true;
@@ -282,6 +312,10 @@
       });
       endBootstrap();
     });
+
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", logoutStudent);
+  }
 
   form.addEventListener("submit", function (e) {
     e.preventDefault();

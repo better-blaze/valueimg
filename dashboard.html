@@ -35,6 +35,25 @@
           </p>
         </section>
 
+        <section
+          id="scoresActionsSection"
+          class="card card--scores-actions"
+          hidden
+        >
+          <h2 class="card__label">평가 결과</h2>
+          <button type="button" id="showScoresBtn" class="btn" disabled>
+            평점 보기
+          </button>
+        </section>
+
+        <section id="scoresResultCard" class="card card--scores-result" hidden>
+          <h2 id="scoresResultHeading" class="card__label">평점 순위</h2>
+          <ul id="scoresRankingList" class="ranking-list"></ul>
+          <button type="button" id="downloadCsvBtn" class="btn btn--secondary">
+            결과 엑셀로 다운로드
+          </button>
+        </section>
+
         <section class="card" aria-labelledby="eval-start-heading">
           <h2 id="eval-start-heading" class="card__label">평가 시작</h2>
           <div class="form-group">
@@ -48,20 +67,11 @@
               autocomplete="off"
             />
           </div>
-          <div class="form-group">
-            <label for="totalImagesInput">이번 반의 총 그림 개수</label>
-            <input
-              id="totalImagesInput"
-              type="number"
-              class="input"
-              inputmode="numeric"
-              min="1"
-              step="1"
-              placeholder="예: 10"
-            />
-          </div>
           <button type="button" id="startEvalBtn" class="btn">
             평가 시작
+          </button>
+          <button type="button" id="resetSessionLobbyBtn" class="btn btn--danger btn--danger-outline">
+            세션 종료 및 초기화
           </button>
         </section>
       </div>
@@ -87,6 +97,9 @@
           <button type="button" id="forceNextImageBtn" class="btn btn--secondary">
             다음 이미지로 강제 이동
           </button>
+          <button type="button" id="resetSessionEvalBtn" class="btn btn--danger">
+            세션 종료 및 초기화
+          </button>
         </section>
       </div>
     </main>
@@ -94,6 +107,31 @@
     <p class="footer-hint">
       학생 화면: <a href="index.html">index.html</a>
     </p>
+
+    <div id="imageModal" class="modal" hidden aria-hidden="true">
+      <div id="imageModalBackdrop" class="modal__backdrop"></div>
+      <div
+        class="modal__dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="imageModalTitle"
+      >
+        <div class="modal__head">
+          <h2 id="imageModalTitle" class="modal__title">작품 미리보기</h2>
+          <button
+            type="button"
+            id="imageModalCloseBtn"
+            class="modal__close"
+            aria-label="닫기"
+          >
+            ×
+          </button>
+        </div>
+        <div class="modal__body">
+          <img id="imageModalImg" class="modal__img" src="" alt="" />
+        </div>
+      </div>
+    </div>
 
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>

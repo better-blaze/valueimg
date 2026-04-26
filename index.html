@@ -7,8 +7,13 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body class="page app-bootstrapping">
-    <header class="page__header">
-      <h1 id="studentPageTitle" class="page__title">세션 입장</h1>
+    <header class="page__header page__header--student">
+      <div class="page__header-row">
+        <h1 id="studentPageTitle" class="page__title">세션 입장</h1>
+        <button type="button" id="logoutBtn" class="btn-logout">
+          로그아웃
+        </button>
+      </div>
       <p id="studentPageSubtitle" class="page__subtitle">
         관리자가 알려 준 PIN과 학번 또는 닉네임을 입력하세요.
       </p>

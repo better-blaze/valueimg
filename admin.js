@@ -6,13 +6,28 @@
   const adminEvalImage = document.getElementById("adminEvalImage");
   const adminSubmitStatus = document.getElementById("adminSubmitStatus");
   const targetClassInput = document.getElementById("targetClassInput");
-  const totalImagesInput = document.getElementById("totalImagesInput");
   const startEvalBtn = document.getElementById("startEvalBtn");
   const forceNextImageBtn = document.getElementById("forceNextImageBtn");
+  const resetSessionEvalBtn = document.getElementById("resetSessionEvalBtn");
+  const resetSessionLobbyBtn = document.getElementById("resetSessionLobbyBtn");
   const pageSubtitle = document.getElementById("pageSubtitle");
+  const scoresActionsSection = document.getElementById("scoresActionsSection");
+  const showScoresBtn = document.getElementById("showScoresBtn");
+  const scoresResultCard = document.getElementById("scoresResultCard");
+  const scoresRankingList = document.getElementById("scoresRankingList");
+  const downloadCsvBtn = document.getElementById("downloadCsvBtn");
+  const imageModal = document.getElementById("imageModal");
+  const imageModalBackdrop = document.getElementById("imageModalBackdrop");
+  const imageModalCloseBtn = document.getElementById("imageModalCloseBtn");
+  const imageModalImg = document.getElementById("imageModalImg");
+  const imageModalTitle = document.getElementById("imageModalTitle");
 
   /** 평가 시작 시점에 확정된 전체 참가자 수 (b) */
   let totalParticipantsB = 0;
+
+  /** 평점 보기 / CSV용 */
+  let lastRankings = [];
+  let cachedTargetClassForScores = "";
 
   let votesUnsubscribe = null;
   let lastWatchedIndex = null;
@@ -22,6 +37,15 @@
 
   function generateFourDigitPin() {
     return String(Math.floor(1000 + Math.random() * 9000));
+  }
+
+  function nextImageUrl(targetClass, currentIndex) {
+    const tc = (targetClass || "").trim();
+    const cur = Number(currentIndex) || 1;
+    if (!tc) {
+      return "";
+    }
+    return "img/" + tc + "_img_" + (cur + 1) + ".jpg";
   }
 
   function showLobbyUI() {
@@ -60,7 +84,11 @@
     lastWatchedIndex = null;
   }
 
-  function requestAdvanceOrFinish() {
+  /**
+   * 다음 이미지 파일 존재 여부를 Image(onload/onerror)로 확인한 뒤
+   * 존재하면 currentIndex+1, 없으면 status finished.
+   */
+  function probeNextImageAndAdvance() {
     if (advanceInFlight) {
       return Promise.resolve();
     }
@@ -70,21 +98,72 @@
       .then(function (snap) {
         const s = snap.val() || {};
         if (s.status !== "evaluating") {
+          advanceInFlight = false;
           return;
         }
+        const tc = (s.targetClass || "").trim();
         const cur = Number(s.currentIndex) || 1;
-        const totalImg = Number(s.totalImages) || 0;
-        if (totalImg < 1) {
-          return;
+        if (!tc) {
+          return sessionRef
+            .update({ status: "finished" })
+            .finally(function () {
+              advanceInFlight = false;
+            });
         }
-        const next = cur + 1;
-        if (next > totalImg) {
-          return sessionRef.update({ status: "finished" });
-        }
-        return sessionRef.update({ currentIndex: next });
+        const nextUrl = nextImageUrl(tc, cur);
+        return new Promise(function (resolve, reject) {
+          let settled = false;
+          const probe = new Image();
+          function finishWrite(writePromise) {
+            if (settled) {
+              return;
+            }
+            settled = true;
+            writePromise
+              .then(resolve, reject)
+              .finally(function () {
+                advanceInFlight = false;
+              });
+          }
+          probe.onload = function () {
+            finishWrite(sessionRef.child("currentIndex").set(cur + 1));
+          };
+          probe.onerror = function () {
+            finishWrite(sessionRef.update({ status: "finished" }));
+          };
+          probe.src = nextUrl;
+        });
       })
-      .finally(function () {
+      .catch(function (err) {
         advanceInFlight = false;
+        return Promise.reject(err);
+      });
+  }
+
+  function resetSessionToLobby() {
+    const pin = generateFourDigitPin();
+    const votesRef = db.ref("currentSession/votes");
+    return votesRef
+      .remove()
+      .then(function () {
+        return usersRef.remove();
+      })
+      .then(function () {
+        return sessionRef.update({
+          status: "lobby",
+          pin: pin,
+          currentIndex: 1,
+          targetClass: null,
+          totalParticipants: null,
+        });
+      })
+      .then(function () {
+        totalParticipantsB = 0;
+        ensurePinDisplay(pin);
+        stopVotesWatch();
+        showLobbyUI();
+        setLobbySubtitle();
+        prevSessionStatus = "lobby";
       });
   }
 
@@ -112,7 +191,7 @@
               vv && typeof vv === "object" ? Object.keys(vv).length : 0;
             const b = Number(s.totalParticipants) || 0;
             if (ac === b && b > 0) {
-              return requestAdvanceOrFinish();
+              return probeNextImageAndAdvance();
             }
           });
       });
@@ -152,6 +231,185 @@
     adminEvalImage.alt = "평가 중: " + tc + " 작품 " + ci;
   }
 
+  function syncScoresControlsForSession(s) {
+    const st = s.status;
+    if (st === "finished") {
+      if (scoresActionsSection) {
+        scoresActionsSection.hidden = false;
+      }
+      if (showScoresBtn) {
+        showScoresBtn.hidden = false;
+        showScoresBtn.disabled = false;
+      }
+    } else {
+      if (scoresActionsSection) {
+        scoresActionsSection.hidden = true;
+      }
+      if (showScoresBtn) {
+        showScoresBtn.hidden = true;
+        showScoresBtn.disabled = true;
+      }
+      hideScoresResultUI();
+      closeImageModal();
+      lastRankings = [];
+    }
+  }
+
+  function hideScoresResultUI() {
+    if (scoresResultCard) {
+      scoresResultCard.hidden = true;
+    }
+    if (scoresRankingList) {
+      scoresRankingList.innerHTML = "";
+    }
+  }
+
+  function aggregateVotesByImage(votesRoot) {
+    const rows = [];
+    if (!votesRoot || typeof votesRoot !== "object") {
+      return rows;
+    }
+    Object.keys(votesRoot).forEach(function (key) {
+      const idx = parseInt(key, 10);
+      if (!Number.isFinite(idx)) {
+        return;
+      }
+      const perUser = votesRoot[key];
+      if (!perUser || typeof perUser !== "object") {
+        return;
+      }
+      const scores = [];
+      Object.keys(perUser).forEach(function (uid) {
+        const v = perUser[uid];
+        if (typeof v === "number" && !Number.isNaN(v)) {
+          scores.push(v);
+        }
+      });
+      if (scores.length === 0) {
+        return;
+      }
+      const sum = scores.reduce(function (a, b) {
+        return a + b;
+      }, 0);
+      const avg = sum / scores.length;
+      rows.push({
+        imageIndex: idx,
+        avg: avg,
+        count: scores.length,
+      });
+    });
+    rows.sort(function (a, b) {
+      if (b.avg !== a.avg) {
+        return b.avg - a.avg;
+      }
+      return a.imageIndex - b.imageIndex;
+    });
+    return rows.map(function (r, i) {
+      return {
+        rank: i + 1,
+        imageIndex: r.imageIndex,
+        avg: r.avg,
+        count: r.count,
+      };
+    });
+  }
+
+  function renderRankingList(rankings, targetClass) {
+    if (!scoresRankingList) {
+      return;
+    }
+    scoresRankingList.innerHTML = "";
+    const tc = (targetClass || "").trim();
+    rankings.forEach(function (r) {
+      const li = document.createElement("li");
+      li.className = "ranking-list__item";
+      li.setAttribute("data-image-index", String(r.imageIndex));
+      li.setAttribute("role", "button");
+      li.setAttribute("tabindex", "0");
+      li.textContent =
+        r.rank +
+        "등: " +
+        r.imageIndex +
+        "번 그림 - " +
+        r.avg.toFixed(1) +
+        "점 (참가 " +
+        r.count +
+        "명)";
+      if (!tc) {
+        li.classList.add("ranking-list__item--disabled");
+        li.setAttribute("aria-disabled", "true");
+      }
+      scoresRankingList.appendChild(li);
+    });
+  }
+
+  function openImageModal(imageIndex, targetClass) {
+    const tc = (targetClass || "").trim();
+    if (!tc || !imageModal || !imageModalImg) {
+      return;
+    }
+    const url = "img/" + tc + "_img_" + imageIndex + ".jpg";
+    imageModalImg.src = url;
+    imageModalImg.alt = tc + " 작품 " + imageIndex;
+    if (imageModalTitle) {
+      imageModalTitle.textContent = String(imageIndex) + "번 그림";
+    }
+    imageModal.hidden = false;
+    imageModal.setAttribute("aria-hidden", "false");
+  }
+
+  function closeImageModal() {
+    if (!imageModal) {
+      return;
+    }
+    imageModal.hidden = true;
+    imageModal.setAttribute("aria-hidden", "true");
+    if (imageModalImg) {
+      imageModalImg.removeAttribute("src");
+    }
+  }
+
+  function safeCsvFilenamePart(name) {
+    const s = String(name || "").trim();
+    if (!s) {
+      return "class";
+    }
+    return s.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_");
+  }
+
+  function downloadRankingsCsv() {
+    if (!lastRankings.length) {
+      alert("다운로드할 순위 데이터가 없습니다. 먼저 「평점 보기」를 눌러 주세요.");
+      return;
+    }
+    const base = safeCsvFilenamePart(cachedTargetClassForScores);
+    const filename = base + "_평가결과.csv";
+    const lines = ["\uFEFF순위,이미지 번호,평균 점수,참가자 수"];
+    lastRankings.forEach(function (r) {
+      lines.push(
+        r.rank +
+          "," +
+          r.imageIndex +
+          "," +
+          r.avg.toFixed(1) +
+          "," +
+          r.count
+      );
+    });
+    const blob = new Blob([lines.join("\r\n")], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   const db = firebase.database();
   const pinRef = db.ref("currentSession/pin");
   const usersRef = db.ref("currentSession/users");
@@ -180,22 +438,26 @@
       setEvalSubtitle();
       updateEvalImage(s.targetClass, s.currentIndex);
       startVotesWatch(db, Number(s.currentIndex) || 1);
+      syncScoresControlsForSession(s);
     } else if (st === "finished") {
       showLobbyUI();
       setFinishedSubtitle();
       if (s.pin != null) {
         ensurePinDisplay(String(s.pin));
+        syncScoresControlsForSession(s);
       } else {
         const pin = generateFourDigitPin();
         return pinRef
           .set(pin)
           .then(function () {
             ensurePinDisplay(pin);
+            syncScoresControlsForSession(s);
           })
           .catch(function (err) {
             pinEl.textContent = "PIN 저장 실패";
             pinEl.classList.remove("pin-display--loading");
             console.error(err);
+            syncScoresControlsForSession(s);
           });
       }
     } else {
@@ -204,11 +466,13 @@
         .set(pin)
         .then(function () {
           ensurePinDisplay(pin);
+          syncScoresControlsForSession(s);
         })
         .catch(function (err) {
           pinEl.textContent = "PIN 저장 실패";
           pinEl.classList.remove("pin-display--loading");
           console.error(err);
+          syncScoresControlsForSession(s);
         });
     }
   });
@@ -226,6 +490,7 @@
       updateEvalImage(s.targetClass, s.currentIndex);
       startVotesWatch(db, Number(s.currentIndex) || 1);
       prevSessionStatus = st;
+      syncScoresControlsForSession(s);
       return;
     }
 
@@ -248,6 +513,7 @@
     }
 
     prevSessionStatus = st || null;
+    syncScoresControlsForSession(s);
   });
 
   startEvalBtn.addEventListener("click", function () {
@@ -255,19 +521,6 @@
     if (!className) {
       alert("평가할 반 이름을 입력해 주세요. (예: 6-1)");
       targetClassInput.focus();
-      return;
-    }
-
-    const totalImagesRaw = (totalImagesInput.value || "").trim();
-    const totalImages = parseInt(totalImagesRaw, 10);
-    if (
-      !totalImagesRaw ||
-      totalImages < 1 ||
-      !Number.isFinite(totalImages) ||
-      String(totalImages) !== totalImagesRaw
-    ) {
-      alert("이번 반의 총 그림 개수는 1 이상의 정수로 입력해 주세요.");
-      totalImagesInput.focus();
       return;
     }
 
@@ -288,7 +541,6 @@
           targetClass: className,
           currentIndex: 1,
           totalParticipants: b,
-          totalImages: totalImages,
         });
       })
       .then(function () {
@@ -308,13 +560,131 @@
 
   forceNextImageBtn.addEventListener("click", function () {
     forceNextImageBtn.disabled = true;
-    requestAdvanceOrFinish()
+    probeNextImageAndAdvance()
       .catch(function (err) {
         console.error(err);
-        alert("이동에 실패했습니다. 네트워크를 확인해 주세요.");
+        alert(
+          "처리에 실패했습니다. Firebase 규칙(쓰기 권한)과 네트워크를 확인해 주세요."
+        );
       })
       .finally(function () {
         forceNextImageBtn.disabled = false;
       });
+  });
+
+  function bindResetSession(btn) {
+    if (!btn) {
+      return;
+    }
+    btn.addEventListener("click", function () {
+      if (
+        !confirm(
+          "평가를 중단하고 세션을 초기화할까요?\n\n" +
+            "· 참가자 목록과 모든 투표가 삭제됩니다.\n" +
+            "· PIN이 새로 발급됩니다.\n" +
+            "· 학생은 다시 입장해야 합니다."
+        )
+      ) {
+        return;
+      }
+      btn.disabled = true;
+      resetSessionToLobby()
+        .catch(function (err) {
+          console.error(err);
+          alert(
+            "초기화에 실패했습니다. Firebase 규칙(삭제·쓰기 권한)을 확인해 주세요."
+          );
+        })
+        .finally(function () {
+          btn.disabled = false;
+        });
+    });
+  }
+
+  bindResetSession(resetSessionEvalBtn);
+  bindResetSession(resetSessionLobbyBtn);
+
+  if (showScoresBtn) {
+    showScoresBtn.addEventListener("click", function () {
+      showScoresBtn.disabled = true;
+      Promise.all([
+        db.ref("currentSession/votes").once("value"),
+        sessionRef.once("value"),
+      ])
+        .then(function (results) {
+          const votesSnap = results[0];
+          const sessionSnap = results[1];
+          const s = sessionSnap.val() || {};
+          if (s.status !== "finished") {
+            alert("평가가 아직 종료되지 않았습니다.");
+            return;
+          }
+          cachedTargetClassForScores = (s.targetClass || "").trim();
+          const rankings = aggregateVotesByImage(votesSnap.val());
+          lastRankings = rankings;
+          renderRankingList(rankings, cachedTargetClassForScores);
+          if (scoresResultCard) {
+            scoresResultCard.hidden = false;
+          }
+          if (rankings.length === 0 && scoresRankingList) {
+            scoresRankingList.innerHTML =
+              '<li class="ranking-list__empty">제출된 평점이 없습니다.</li>';
+          }
+        })
+        .catch(function (err) {
+          console.error(err);
+          alert("평점 데이터를 불러오지 못했습니다.");
+        })
+        .finally(function () {
+          if (showScoresBtn) {
+            showScoresBtn.disabled = false;
+          }
+        });
+    });
+  }
+
+  if (downloadCsvBtn) {
+    downloadCsvBtn.addEventListener("click", downloadRankingsCsv);
+  }
+
+  if (scoresRankingList) {
+    scoresRankingList.addEventListener("click", function (e) {
+      const li = e.target.closest(".ranking-list__item");
+      if (!li || li.classList.contains("ranking-list__item--disabled")) {
+        return;
+      }
+      const idx = parseInt(li.getAttribute("data-image-index") || "0", 10);
+      if (!Number.isFinite(idx)) {
+        return;
+      }
+      openImageModal(idx, cachedTargetClassForScores);
+    });
+    scoresRankingList.addEventListener("keydown", function (e) {
+      if (e.key !== "Enter" && e.key !== " ") {
+        return;
+      }
+      const li = e.target.closest(".ranking-list__item");
+      if (!li || li.classList.contains("ranking-list__item--disabled")) {
+        return;
+      }
+      e.preventDefault();
+      const idx = parseInt(li.getAttribute("data-image-index") || "0", 10);
+      if (!Number.isFinite(idx)) {
+        return;
+      }
+      openImageModal(idx, cachedTargetClassForScores);
+    });
+  }
+
+  if (imageModalBackdrop) {
+    imageModalBackdrop.addEventListener("click", closeImageModal);
+  }
+  if (imageModalCloseBtn) {
+    imageModalCloseBtn.addEventListener("click", closeImageModal);
+  }
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && imageModal && !imageModal.hidden) {
+      closeImageModal();
+    }
   });
 })();
