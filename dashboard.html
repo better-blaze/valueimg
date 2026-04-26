@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>관리자 대시보드 · 실시간 그림 평가</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="page page--dashboard">
+    <header class="page__header">
+      <h1 class="page__title">관리자 대시보드</h1>
+      <p id="pageSubtitle" class="page__subtitle">
+        학생들에게 아래 PIN을 알려 주세요.
+      </p>
+    </header>
+
+    <main class="page__main">
+      <div id="lobbyPanel" class="panel">
+        <section class="card card--pin" aria-labelledby="pin-heading">
+          <span id="pin-heading" class="card__label">세션 PIN</span>
+          <p
+            id="pinDisplay"
+            class="pin-display pin-display--loading"
+            aria-live="polite"
+          >
+            PIN 생성 중…
+          </p>
+        </section>
+
+        <section class="card" aria-labelledby="users-heading">
+          <h2 id="users-heading" class="visually-hidden">접속 현황</h2>
+          <p class="stat-line stat-row__text">
+            현재 접속자:
+            <span id="userCount" class="stat-row__count">0</span>명
+          </p>
+        </section>
+
+        <section class="card" aria-labelledby="eval-start-heading">
+          <h2 id="eval-start-heading" class="card__label">평가 시작</h2>
+          <div class="form-group">
+            <label for="targetClassInput">평가할 반</label>
+            <input
+              id="targetClassInput"
+              type="text"
+              class="input"
+              placeholder="예: 6-1, 6-2"
+              maxlength="32"
+              autocomplete="off"
+            />
+          </div>
+          <div class="form-group">
+            <label for="totalImagesInput">이번 반의 총 그림 개수</label>
+            <input
+              id="totalImagesInput"
+              type="number"
+              class="input"
+              inputmode="numeric"
+              min="1"
+              step="1"
+              placeholder="예: 10"
+            />
+          </div>
+          <button type="button" id="startEvalBtn" class="btn">
+            평가 시작
+          </button>
+        </section>
+      </div>
+
+      <div id="evalPanel" class="panel panel--hidden" hidden>
+        <section class="card card--eval-preview" aria-labelledby="eval-img-heading">
+          <h2 id="eval-img-heading" class="card__label">현재 평가 중인 이미지</h2>
+          <div class="eval-image-wrap">
+            <img
+              id="adminEvalImage"
+              class="eval-image"
+              src=""
+              alt="평가 중인 작품"
+            />
+          </div>
+          <p
+            id="adminSubmitStatus"
+            class="eval-submit-stat"
+            aria-live="polite"
+          >
+            0명 제출 / 전체 0명
+          </p>
+          <button type="button" id="forceNextImageBtn" class="btn btn--secondary">
+            다음 이미지로 강제 이동
+          </button>
+        </section>
+      </div>
+    </main>
+
+    <p class="footer-hint">
+      학생 화면: <a href="index.html">index.html</a>
+    </p>
+
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+    <script src="firebase-config.js"></script>
+    <script src="admin.js"></script>
+  </body>
+</html>

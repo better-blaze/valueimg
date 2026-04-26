@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>입장 · 실시간 그림 평가</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="page app-bootstrapping">
+    <header class="page__header">
+      <h1 id="studentPageTitle" class="page__title">세션 입장</h1>
+      <p id="studentPageSubtitle" class="page__subtitle">
+        관리자가 알려 준 PIN과 학번 또는 닉네임을 입력하세요.
+      </p>
+    </header>
+
+    <main class="page__main">
+      <div id="lobbyPanel" class="panel">
+        <form id="joinForm" class="card" novalidate>
+          <div class="form-group">
+            <label for="pinInput">PIN (4자리)</label>
+            <input
+              id="pinInput"
+              name="pin"
+              type="text"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              maxlength="4"
+              class="input input--pin"
+              placeholder="0000"
+              autocomplete="one-time-code"
+              required
+              aria-describedby="pin-hint"
+            />
+            <span id="pin-hint" class="form-hint">
+              대시보드에 표시된 숫자와 동일해야 합니다.
+            </span>
+          </div>
+
+          <div class="form-group">
+            <label for="nameInput">학번 또는 닉네임</label>
+            <input
+              id="nameInput"
+              name="displayName"
+              type="text"
+              class="input"
+              placeholder="예: 2024001 또는 홍길동"
+              maxlength="64"
+              required
+            />
+          </div>
+
+          <button type="submit" id="joinBtn" class="btn">입장하기</button>
+        </form>
+      </div>
+
+      <div id="waitPanel" class="panel panel--hidden" hidden>
+        <section class="card card--wait">
+          <p id="waitPanelText" class="wait-panel-text">
+            세션에 다시 연결되었습니다. 평가가 시작되면 화면이 자동으로 바뀝니다.
+          </p>
+        </section>
+      </div>
+
+      <div id="evalPanel" class="panel panel--hidden" hidden>
+        <section class="card card--eval-student" aria-labelledby="student-eval-heading">
+          <h2 id="student-eval-heading" class="visually-hidden">작품 평가</h2>
+          <div class="eval-image-wrap">
+            <img
+              id="studentEvalImage"
+              class="eval-image"
+              src=""
+              alt="평가할 작품"
+            />
+          </div>
+
+          <div class="eval-slider-block">
+            <div class="eval-slider-head">
+              <label class="eval-slider-label" for="scoreSlider">점수 (1–10)</label>
+              <span id="scoreValue" class="eval-score-value" aria-live="polite">5</span>
+            </div>
+            <input
+              id="scoreSlider"
+              type="range"
+              class="eval-range"
+              min="1"
+              max="10"
+              step="1"
+              value="5"
+            />
+          </div>
+
+          <button type="button" id="submitVoteBtn" class="btn btn--eval-submit">
+            제출
+          </button>
+          <p id="voteStatusMsg" class="eval-vote-msg" role="status"></p>
+        </section>
+      </div>
+
+      <div id="finishedPanel" class="panel panel--hidden" hidden>
+        <section class="card card--finished">
+          <p class="finished-msg">평가 종료! 수고하셨습니다.</p>
+        </section>
+      </div>
+    </main>
+
+    <p id="studentFooterHint" class="footer-hint">
+      관리자: <a href="dashboard.html">dashboard.html</a>
+    </p>
+
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+    <script src="firebase-config.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
