@@ -16,6 +16,10 @@
   const studentPageSubtitle = document.getElementById("studentPageSubtitle");
   const studentFooterHint = document.getElementById("studentFooterHint");
   const logoutBtn = document.getElementById("logoutBtn");
+  const evalImageStage = document.getElementById("evalImageStage");
+  const evalImageFrame = document.getElementById("evalImageFrame");
+  const imgZoomLens = document.getElementById("imgZoomLens");
+  const imgZoomResult = document.getElementById("imgZoomResult");
 
   const LS_NAME = "studentDisplayName";
   const LS_ID = "studentId";
@@ -30,6 +34,225 @@
   let wasEvaluating = false;
   let prevEvalIndex = null;
   let lastPreloadKey = "";
+
+  const ZOOM_LEVEL = 3;
+  const zoomState = {
+    rafId: null,
+    resizeObserver: null,
+    onStageMove: null,
+    onStageLeave: null,
+    onTouchStart: null,
+    onTouchEnd: null,
+    touchClearTimer: null,
+  };
+
+  function setEvalModeActive(on) {
+    document.body.classList.toggle("page--eval-active", !!on);
+  }
+
+  function detachImageZoom() {
+    if (zoomState.touchClearTimer) {
+      clearTimeout(zoomState.touchClearTimer);
+      zoomState.touchClearTimer = null;
+    }
+    if (zoomState.rafId) {
+      cancelAnimationFrame(zoomState.rafId);
+      zoomState.rafId = null;
+    }
+    if (zoomState.resizeObserver && evalImageFrame) {
+      zoomState.resizeObserver.disconnect();
+      zoomState.resizeObserver = null;
+    }
+    if (evalImageStage) {
+      evalImageStage.classList.remove("is-zoom-active");
+      if (zoomState.onStageMove) {
+        evalImageStage.removeEventListener("mousemove", zoomState.onStageMove);
+        evalImageStage.removeEventListener("touchmove", zoomState.onStageMove);
+      }
+      if (zoomState.onStageLeave) {
+        evalImageStage.removeEventListener("mouseleave", zoomState.onStageLeave);
+      }
+      if (zoomState.onTouchStart) {
+        evalImageStage.removeEventListener("touchstart", zoomState.onTouchStart);
+      }
+      if (zoomState.onTouchEnd) {
+        evalImageStage.removeEventListener("touchend", zoomState.onTouchEnd);
+        evalImageStage.removeEventListener("touchcancel", zoomState.onTouchEnd);
+      }
+    }
+    zoomState.onStageMove = null;
+    zoomState.onStageLeave = null;
+    zoomState.onTouchStart = null;
+    zoomState.onTouchEnd = null;
+    if (imgZoomLens) {
+      imgZoomLens.hidden = true;
+    }
+    if (imgZoomResult) {
+      imgZoomResult.hidden = true;
+      imgZoomResult.style.backgroundImage = "";
+      imgZoomResult.style.backgroundSize = "";
+      imgZoomResult.style.backgroundPosition = "";
+    }
+  }
+
+  function syncZoomBackgroundSize() {
+    if (!evalImageFrame || !imgZoomResult) {
+      return;
+    }
+    const fw = evalImageFrame.offsetWidth;
+    const fh = evalImageFrame.offsetHeight;
+    if (fw < 8 || fh < 8) {
+      return;
+    }
+    imgZoomResult.style.backgroundSize =
+      fw * ZOOM_LEVEL + "px " + fh * ZOOM_LEVEL + "px";
+  }
+
+  function applyZoomAtClientPoint(clientX, clientY) {
+    if (!evalImageFrame || !imgZoomLens || !imgZoomResult) {
+      return;
+    }
+    const rect = evalImageFrame.getBoundingClientRect();
+    const px = clientX - rect.left;
+    const py = clientY - rect.top;
+    const fw = rect.width;
+    const fh = rect.height;
+    if (fw < 8 || fh < 8) {
+      return;
+    }
+    if (px < 0 || py < 0 || px > fw || py > fh) {
+      imgZoomLens.hidden = true;
+      return;
+    }
+    const lens = Math.round(
+      Math.min(104, Math.max(56, Math.min(fw, fh) * 0.17))
+    );
+    let lx = px - lens / 2;
+    let ly = py - lens / 2;
+    lx = Math.max(0, Math.min(lx, fw - lens));
+    ly = Math.max(0, Math.min(ly, fh - lens));
+    imgZoomLens.style.width = lens + "px";
+    imgZoomLens.style.height = lens + "px";
+    imgZoomLens.style.left = lx + "px";
+    imgZoomLens.style.top = ly + "px";
+    imgZoomLens.hidden = false;
+    const rw = imgZoomResult.offsetWidth || 1;
+    const rh = imgZoomResult.offsetHeight || 1;
+    const bgX = -lx * ZOOM_LEVEL + rw / 2 - (lens * ZOOM_LEVEL) / 2;
+    const bgY = -ly * ZOOM_LEVEL + rh / 2 - (lens * ZOOM_LEVEL) / 2;
+    imgZoomResult.style.backgroundPosition = bgX + "px " + bgY + "px";
+  }
+
+  function scheduleZoomMove(clientX, clientY) {
+    if (zoomState.rafId) {
+      cancelAnimationFrame(zoomState.rafId);
+    }
+    zoomState.rafId = requestAnimationFrame(function () {
+      zoomState.rafId = null;
+      applyZoomAtClientPoint(clientX, clientY);
+    });
+  }
+
+  function attachImageZoom() {
+    detachImageZoom();
+    if (
+      !evalImageStage ||
+      !evalImageFrame ||
+      !studentEvalImage ||
+      !imgZoomLens ||
+      !imgZoomResult
+    ) {
+      return;
+    }
+    if (!studentEvalImage.src) {
+      return;
+    }
+    const src = studentEvalImage.currentSrc || studentEvalImage.src;
+    imgZoomResult.style.backgroundImage =
+      'url("' + src.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '")';
+    imgZoomResult.hidden = false;
+    syncZoomBackgroundSize();
+
+    zoomState.onStageMove = function (e) {
+      if (evalPanel.hidden) {
+        return;
+      }
+      const t = e.touches ? e.touches[0] : e;
+      if (!t) {
+        return;
+      }
+      scheduleZoomMove(t.clientX, t.clientY);
+    };
+    zoomState.onStageLeave = function () {
+      if (imgZoomLens) {
+        imgZoomLens.hidden = true;
+      }
+    };
+    zoomState.onTouchStart = function (e) {
+      evalImageStage.classList.add("is-zoom-active");
+      zoomState.onStageMove(e);
+    };
+    zoomState.onTouchEnd = function () {
+      if (zoomState.touchClearTimer) {
+        clearTimeout(zoomState.touchClearTimer);
+      }
+      zoomState.touchClearTimer = setTimeout(function () {
+        evalImageStage.classList.remove("is-zoom-active");
+        if (imgZoomLens) {
+          imgZoomLens.hidden = true;
+        }
+        zoomState.touchClearTimer = null;
+      }, 240);
+    };
+
+    evalImageStage.addEventListener("mousemove", zoomState.onStageMove);
+    evalImageStage.addEventListener("touchmove", zoomState.onStageMove, {
+      passive: true,
+    });
+    evalImageStage.addEventListener("mouseleave", zoomState.onStageLeave);
+    evalImageStage.addEventListener("touchstart", zoomState.onTouchStart, {
+      passive: true,
+    });
+    evalImageStage.addEventListener("touchend", zoomState.onTouchEnd);
+    evalImageStage.addEventListener("touchcancel", zoomState.onTouchEnd);
+
+    if (typeof ResizeObserver !== "undefined") {
+      zoomState.resizeObserver = new ResizeObserver(function () {
+        syncZoomBackgroundSize();
+      });
+      zoomState.resizeObserver.observe(evalImageFrame);
+    }
+
+    var r = evalImageFrame.getBoundingClientRect();
+    scheduleZoomMove(r.left + r.width / 2, r.top + r.height / 2);
+  }
+
+  function queueImageZoomAfterHeroLoad() {
+    function tryAttach() {
+      if (evalPanel.hidden) {
+        return;
+      }
+      attachImageZoom();
+    }
+    if (studentEvalImage.src && studentEvalImage.complete && studentEvalImage.naturalWidth) {
+      requestAnimationFrame(tryAttach);
+      return;
+    }
+    studentEvalImage.addEventListener(
+      "load",
+      function () {
+        requestAnimationFrame(tryAttach);
+      },
+      { once: true }
+    );
+    studentEvalImage.addEventListener(
+      "error",
+      function () {
+        detachImageZoom();
+      },
+      { once: true }
+    );
+  }
 
   function getStudentId() {
     return localStorage.getItem(LS_ID);
@@ -51,6 +274,8 @@
   }
 
   function showLobbyJoin() {
+    setEvalModeActive(false);
+    detachImageZoom();
     hideAllPanels();
     lobbyPanel.hidden = false;
     lobbyPanel.classList.remove("panel--hidden");
@@ -63,6 +288,8 @@
   }
 
   function showWaitPanel() {
+    setEvalModeActive(false);
+    detachImageZoom();
     hideAllPanels();
     waitPanel.hidden = false;
     waitPanel.classList.remove("panel--hidden");
@@ -78,6 +305,7 @@
     hideAllPanels();
     evalPanel.hidden = false;
     evalPanel.classList.remove("panel--hidden");
+    setEvalModeActive(true);
     studentPageTitle.textContent = "작품 평가";
     studentPageSubtitle.textContent =
       "슬라이더로 점수를 선택한 뒤 제출해 주세요.";
@@ -87,6 +315,8 @@
   }
 
   function showFinishedPanel() {
+    setEvalModeActive(false);
+    detachImageZoom();
     hideAllPanels();
     finishedPanel.hidden = false;
     finishedPanel.classList.remove("panel--hidden");
@@ -114,6 +344,7 @@
   }
 
   function updateEvalImage(targetClass, index) {
+    detachImageZoom();
     const url = imageUrlFor(targetClass, index);
     if (!url) {
       studentEvalImage.removeAttribute("src");
@@ -121,7 +352,9 @@
       return;
     }
     studentEvalImage.src = url;
-    studentEvalImage.alt = "평가할 작품: " + (targetClass || "").trim() + " (" + index + ")";
+    studentEvalImage.alt =
+      "평가할 작품: " + (targetClass || "").trim() + " (" + index + ")";
+    queueImageZoomAfterHeroLoad();
   }
 
   function preloadNextImage(targetClass, currentIndex) {
@@ -208,6 +441,8 @@
     localStorage.removeItem(LS_NAME);
     localStorage.removeItem(LS_ID);
     localStorage.removeItem(LS_PIN);
+    setEvalModeActive(false);
+    detachImageZoom();
     wasEvaluating = false;
     prevEvalIndex = null;
     lastPreloadKey = "";

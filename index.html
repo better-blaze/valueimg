@@ -67,38 +67,62 @@
         </section>
       </div>
 
-      <div id="evalPanel" class="panel panel--hidden" hidden>
-        <section class="card card--eval-student" aria-labelledby="student-eval-heading">
+      <div id="evalPanel" class="panel panel--hidden panel--eval-fullscreen" hidden>
+        <section class="eval-hero" aria-labelledby="student-eval-heading">
           <h2 id="student-eval-heading" class="visually-hidden">작품 평가</h2>
-          <div class="eval-image-wrap">
-            <img
-              id="studentEvalImage"
-              class="eval-image"
-              src=""
-              alt="평가할 작품"
-            />
-          </div>
 
-          <div class="eval-slider-block">
-            <div class="eval-slider-head">
-              <label class="eval-slider-label" for="scoreSlider">점수 (1–10)</label>
-              <span id="scoreValue" class="eval-score-value" aria-live="polite">5</span>
+          <div id="evalImageStage" class="eval-image-stage">
+            <div id="evalImageFrame" class="eval-image-frame">
+              <img
+                id="studentEvalImage"
+                class="eval-image eval-image--hero"
+                src=""
+                alt="평가할 작품"
+              />
+              <div
+                id="imgZoomLens"
+                class="img-zoom-lens"
+                hidden
+                aria-hidden="true"
+              ></div>
             </div>
-            <input
-              id="scoreSlider"
-              type="range"
-              class="eval-range"
-              min="1"
-              max="10"
-              step="1"
-              value="5"
-            />
+            <div
+              id="imgZoomResult"
+              class="img-zoom-result"
+              hidden
+              aria-hidden="true"
+            ></div>
           </div>
 
-          <button type="button" id="submitVoteBtn" class="btn btn--eval-submit">
-            제출
-          </button>
-          <p id="voteStatusMsg" class="eval-vote-msg" role="status"></p>
+          <div class="eval-floating-dock">
+            <div class="eval-floating-dock__glass eval-floating-dock__glass--bar">
+              <div class="eval-dock-toolbar" role="group" aria-label="점수 제출">
+                <div class="eval-dock-toolbar__meta">
+                  <label class="eval-dock-label" for="scoreSlider">점수 (1–10)</label>
+                  <span id="scoreValue" class="eval-dock-score" aria-live="polite">5</span>
+                </div>
+                <div class="eval-dock-toolbar__slider">
+                  <input
+                    id="scoreSlider"
+                    type="range"
+                    class="eval-range eval-range--dock-bar"
+                    min="1"
+                    max="10"
+                    step="1"
+                    value="5"
+                  />
+                </div>
+                <button
+                  type="button"
+                  id="submitVoteBtn"
+                  class="btn btn--eval-submit btn--eval-submit--dock-bar"
+                >
+                  제출
+                </button>
+              </div>
+              <p id="voteStatusMsg" class="eval-vote-msg eval-vote-msg--dock-bar" role="status"></p>
+            </div>
+          </div>
         </section>
       </div>
 
