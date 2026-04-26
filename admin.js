@@ -16,11 +16,14 @@
   const scoresResultCard = document.getElementById("scoresResultCard");
   const scoresRankingList = document.getElementById("scoresRankingList");
   const downloadCsvBtn = document.getElementById("downloadCsvBtn");
+  const clearEvalDataBtn = document.getElementById("clearEvalDataBtn");
   const imageModal = document.getElementById("imageModal");
   const imageModalBackdrop = document.getElementById("imageModalBackdrop");
   const imageModalCloseBtn = document.getElementById("imageModalCloseBtn");
   const imageModalImg = document.getElementById("imageModalImg");
   const imageModalTitle = document.getElementById("imageModalTitle");
+  const imageModalLoading = document.getElementById("imageModalLoading");
+  const adminEvalImageStatus = document.getElementById("adminEvalImageStatus");
 
   /** 평가 시작 시점에 확정된 전체 참가자 수 (b) */
   let totalParticipantsB = 0;
@@ -34,6 +37,102 @@
   let prevSessionStatus = null;
   let autoAdvanceTimer = null;
   let advanceInFlight = false;
+
+  /** 최근 세션 스냅샷(평점 리스너용) */
+  let lastSessionData = {};
+  let evalResultsUnsubscribe = null;
+  let subscribedEvalClassKey = "";
+  let hasAccumulatedVotes = false;
+  let adminEvalImageLoadToken = 0;
+  let modalImageLoadToken = 0;
+
+  function firebaseSafeKeySegment(raw) {
+    return String(raw || "")
+      .trim()
+      .replace(/[.#$\[\]/\u0000-\u001F]/g, "_");
+  }
+
+  function getEffectiveRawTargetClass() {
+    const fromSession = (lastSessionData.targetClass || "").trim();
+    if (fromSession) {
+      return fromSession;
+    }
+    return (targetClassInput && targetClassInput.value.trim()) || "";
+  }
+
+  function hasAnyVotesInEvaluationResults(data) {
+    if (!data || typeof data !== "object") {
+      return false;
+    }
+    const imageKeys = Object.keys(data);
+    for (var i = 0; i < imageKeys.length; i++) {
+      const byUser = data[imageKeys[i]];
+      if (!byUser || typeof byUser !== "object") {
+        continue;
+      }
+      const uids = Object.keys(byUser);
+      for (var j = 0; j < uids.length; j++) {
+        const sc = byUser[uids[j]];
+        if (typeof sc === "number" && !Number.isNaN(sc)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function updateShowScoresButtonUI() {
+    if (!showScoresBtn) {
+      return;
+    }
+    const raw = getEffectiveRawTargetClass();
+    const key = firebaseSafeKeySegment(raw);
+    const canEnable = !!key && hasAccumulatedVotes;
+    showScoresBtn.disabled = !canEnable;
+    showScoresBtn.classList.toggle("btn--scores-ready", canEnable);
+    if (downloadCsvBtn) {
+      downloadCsvBtn.disabled = lastRankings.length === 0;
+    }
+    if (clearEvalDataBtn) {
+      clearEvalDataBtn.disabled = !key;
+    }
+  }
+
+  function resubscribeEvaluationResults() {
+    if (typeof evalResultsUnsubscribe === "function") {
+      evalResultsUnsubscribe();
+      evalResultsUnsubscribe = null;
+    }
+    const raw = getEffectiveRawTargetClass();
+    const key = firebaseSafeKeySegment(raw);
+    if (!key) {
+      subscribedEvalClassKey = "";
+      hasAccumulatedVotes = false;
+      updateShowScoresButtonUI();
+      return;
+    }
+    if (key !== subscribedEvalClassKey) {
+      subscribedEvalClassKey = key;
+      hideScoresResultUI();
+      closeImageModal();
+      lastRankings = [];
+    }
+    const r = db.ref("evaluationResults/" + key);
+    const handler = function (snap) {
+      hasAccumulatedVotes = hasAnyVotesInEvaluationResults(snap.val());
+      updateShowScoresButtonUI();
+    };
+    r.on("value", handler);
+    evalResultsUnsubscribe = function () {
+      r.off("value", handler);
+    };
+  }
+
+  function onSessionScoresContextUpdated(s) {
+    lastSessionData = s || {};
+    resubscribeEvaluationResults();
+    updateShowScoresButtonUI();
+  }
 
   function generateFourDigitPin() {
     return String(Math.floor(1000 + Math.random() * 9000));
@@ -219,39 +318,78 @@
     };
   }
 
+  function setAdminEvalImageStatus(message) {
+    if (!adminEvalImageStatus) {
+      return;
+    }
+    if (message) {
+      adminEvalImageStatus.textContent = message;
+      adminEvalImageStatus.hidden = false;
+    } else {
+      adminEvalImageStatus.textContent = "";
+      adminEvalImageStatus.hidden = true;
+    }
+  }
+
   function updateEvalImage(targetClass, currentIndex) {
     const tc = (targetClass || "").trim();
     const ci = Number(currentIndex) || 1;
+    const token = ++adminEvalImageLoadToken;
+
     if (!tc) {
+      adminEvalImage.onload = null;
+      adminEvalImage.onerror = null;
       adminEvalImage.removeAttribute("src");
       adminEvalImage.alt = "반 이름이 설정되지 않았습니다.";
+      adminEvalImage.classList.remove("eval-image--loading");
+      setAdminEvalImageStatus("");
       return;
     }
-    adminEvalImage.src = "img/" + tc + "_img_" + ci + ".jpg";
-    adminEvalImage.alt = "평가 중: " + tc + " 작품 " + ci;
-  }
 
-  function syncScoresControlsForSession(s) {
-    const st = s.status;
-    if (st === "finished") {
-      if (scoresActionsSection) {
-        scoresActionsSection.hidden = false;
+    const url = "img/" + tc + "_img_" + ci + ".jpg";
+
+    adminEvalImage.onload = null;
+    adminEvalImage.onerror = null;
+    adminEvalImage.classList.add("eval-image--loading");
+    adminEvalImage.alt = "불러오는 중… (" + tc + " · " + ci + ")";
+    setAdminEvalImageStatus("이미지를 불러오는 중…");
+
+    function onLoad() {
+      if (token !== adminEvalImageLoadToken) {
+        return;
       }
-      if (showScoresBtn) {
-        showScoresBtn.hidden = false;
-        showScoresBtn.disabled = false;
+      adminEvalImage.onload = null;
+      adminEvalImage.onerror = null;
+      setAdminEvalImageStatus("");
+      adminEvalImage.classList.remove("eval-image--loading");
+      adminEvalImage.alt = "평가 중: " + tc + " 작품 " + ci;
+    }
+
+    function onError() {
+      if (token !== adminEvalImageLoadToken) {
+        return;
       }
-    } else {
-      if (scoresActionsSection) {
-        scoresActionsSection.hidden = true;
-      }
-      if (showScoresBtn) {
-        showScoresBtn.hidden = true;
-        showScoresBtn.disabled = true;
-      }
-      hideScoresResultUI();
-      closeImageModal();
-      lastRankings = [];
+      adminEvalImage.onload = null;
+      adminEvalImage.onerror = null;
+      adminEvalImage.classList.remove("eval-image--loading");
+      adminEvalImage.removeAttribute("src");
+      adminEvalImage.alt = "이미지 없음";
+      setAdminEvalImageStatus(
+        "이미지를 찾을 수 없습니다. img/" +
+          tc +
+          "_img_" +
+          ci +
+          ".jpg 파일이 있는지 확인해 주세요."
+      );
+    }
+
+    adminEvalImage.onload = onLoad;
+    adminEvalImage.onerror = onError;
+    adminEvalImage.src = url;
+    if (adminEvalImage.complete && adminEvalImage.naturalWidth) {
+      adminEvalImage.onload = null;
+      adminEvalImage.onerror = null;
+      onLoad();
     }
   }
 
@@ -348,24 +486,74 @@
     if (!tc || !imageModal || !imageModalImg) {
       return;
     }
-    const url = "img/" + tc + "_img_" + imageIndex + ".jpg";
-    imageModalImg.src = url;
-    imageModalImg.alt = tc + " 작품 " + imageIndex;
+    const token = ++modalImageLoadToken;
     if (imageModalTitle) {
       imageModalTitle.textContent = String(imageIndex) + "번 그림";
     }
     imageModal.hidden = false;
     imageModal.setAttribute("aria-hidden", "false");
+    imageModalImg.removeAttribute("src");
+    imageModalImg.classList.add("eval-image--loading");
+    if (imageModalLoading) {
+      imageModalLoading.textContent = "이미지를 불러오는 중…";
+      imageModalLoading.hidden = false;
+    }
+
+    const url = "img/" + tc + "_img_" + imageIndex + ".jpg";
+
+    function doneOk() {
+      if (token !== modalImageLoadToken) {
+        return;
+      }
+      imageModalImg.onload = null;
+      imageModalImg.onerror = null;
+      if (imageModalLoading) {
+        imageModalLoading.hidden = true;
+        imageModalLoading.textContent = "";
+      }
+      imageModalImg.classList.remove("eval-image--loading");
+      imageModalImg.alt = tc + " 작품 " + imageIndex;
+    }
+
+    function doneErr() {
+      if (token !== modalImageLoadToken) {
+        return;
+      }
+      imageModalImg.onload = null;
+      imageModalImg.onerror = null;
+      imageModalImg.classList.remove("eval-image--loading");
+      imageModalImg.removeAttribute("src");
+      if (imageModalLoading) {
+        imageModalLoading.textContent =
+          "이미지를 불러올 수 없습니다. img 폴더에 파일이 있는지 확인해 주세요.";
+        imageModalLoading.hidden = false;
+      }
+    }
+
+    imageModalImg.onload = doneOk;
+    imageModalImg.onerror = doneErr;
+    imageModalImg.src = url;
+    if (imageModalImg.complete && imageModalImg.naturalWidth) {
+      imageModalImg.onload = null;
+      imageModalImg.onerror = null;
+      doneOk();
+    }
   }
 
   function closeImageModal() {
+    modalImageLoadToken += 1;
     if (!imageModal) {
       return;
     }
     imageModal.hidden = true;
     imageModal.setAttribute("aria-hidden", "true");
+    if (imageModalLoading) {
+      imageModalLoading.hidden = true;
+      imageModalLoading.textContent = "";
+    }
     if (imageModalImg) {
       imageModalImg.removeAttribute("src");
+      imageModalImg.classList.remove("eval-image--loading");
     }
   }
 
@@ -438,26 +626,26 @@
       setEvalSubtitle();
       updateEvalImage(s.targetClass, s.currentIndex);
       startVotesWatch(db, Number(s.currentIndex) || 1);
-      syncScoresControlsForSession(s);
+      onSessionScoresContextUpdated(s);
     } else if (st === "finished") {
       showLobbyUI();
       setFinishedSubtitle();
       if (s.pin != null) {
         ensurePinDisplay(String(s.pin));
-        syncScoresControlsForSession(s);
+        onSessionScoresContextUpdated(s);
       } else {
         const pin = generateFourDigitPin();
         return pinRef
           .set(pin)
           .then(function () {
             ensurePinDisplay(pin);
-            syncScoresControlsForSession(s);
+            onSessionScoresContextUpdated(s);
           })
           .catch(function (err) {
             pinEl.textContent = "PIN 저장 실패";
             pinEl.classList.remove("pin-display--loading");
             console.error(err);
-            syncScoresControlsForSession(s);
+            onSessionScoresContextUpdated(s);
           });
       }
     } else {
@@ -466,13 +654,13 @@
         .set(pin)
         .then(function () {
           ensurePinDisplay(pin);
-          syncScoresControlsForSession(s);
+          onSessionScoresContextUpdated(s);
         })
         .catch(function (err) {
           pinEl.textContent = "PIN 저장 실패";
           pinEl.classList.remove("pin-display--loading");
           console.error(err);
-          syncScoresControlsForSession(s);
+          onSessionScoresContextUpdated(s);
         });
     }
   });
@@ -490,7 +678,7 @@
       updateEvalImage(s.targetClass, s.currentIndex);
       startVotesWatch(db, Number(s.currentIndex) || 1);
       prevSessionStatus = st;
-      syncScoresControlsForSession(s);
+      onSessionScoresContextUpdated(s);
       return;
     }
 
@@ -513,7 +701,7 @@
     }
 
     prevSessionStatus = st || null;
-    syncScoresControlsForSession(s);
+    onSessionScoresContextUpdated(s);
   });
 
   startEvalBtn.addEventListener("click", function () {
@@ -606,21 +794,23 @@
 
   if (showScoresBtn) {
     showScoresBtn.addEventListener("click", function () {
+      if (showScoresBtn.disabled) {
+        return;
+      }
       showScoresBtn.disabled = true;
-      Promise.all([
-        db.ref("currentSession/votes").once("value"),
-        sessionRef.once("value"),
-      ])
-        .then(function (results) {
-          const votesSnap = results[0];
-          const sessionSnap = results[1];
-          const s = sessionSnap.val() || {};
-          if (s.status !== "finished") {
-            alert("평가가 아직 종료되지 않았습니다.");
-            return;
-          }
-          cachedTargetClassForScores = (s.targetClass || "").trim();
-          const rankings = aggregateVotesByImage(votesSnap.val());
+      const raw = getEffectiveRawTargetClass();
+      const key = firebaseSafeKeySegment(raw);
+      if (!key) {
+        alert("반 이름을 입력하거나 진행 중인 세션의 반 정보가 필요합니다.");
+        updateShowScoresButtonUI();
+        return;
+      }
+      db
+        .ref("evaluationResults/" + key)
+        .once("value")
+        .then(function (snap) {
+          cachedTargetClassForScores = raw;
+          const rankings = aggregateVotesByImage(snap.val());
           lastRankings = rankings;
           renderRankingList(rankings, cachedTargetClassForScores);
           if (scoresResultCard) {
@@ -628,7 +818,7 @@
           }
           if (rankings.length === 0 && scoresRankingList) {
             scoresRankingList.innerHTML =
-              '<li class="ranking-list__empty">제출된 평점이 없습니다.</li>';
+              '<li class="ranking-list__empty">누적된 평점이 없습니다.</li>';
           }
         })
         .catch(function (err) {
@@ -636,15 +826,66 @@
           alert("평점 데이터를 불러오지 못했습니다.");
         })
         .finally(function () {
-          if (showScoresBtn) {
-            showScoresBtn.disabled = false;
-          }
+          updateShowScoresButtonUI();
         });
     });
   }
 
+  if (targetClassInput) {
+    targetClassInput.addEventListener("input", function () {
+      onSessionScoresContextUpdated(lastSessionData);
+    });
+  }
+
   if (downloadCsvBtn) {
-    downloadCsvBtn.addEventListener("click", downloadRankingsCsv);
+    downloadCsvBtn.addEventListener("click", function () {
+      if (downloadCsvBtn.disabled) {
+        return;
+      }
+      downloadRankingsCsv();
+    });
+  }
+
+  if (clearEvalDataBtn) {
+    clearEvalDataBtn.addEventListener("click", function () {
+      if (clearEvalDataBtn.disabled) {
+        return;
+      }
+      const raw = getEffectiveRawTargetClass();
+      const key = firebaseSafeKeySegment(raw);
+      if (!raw || !key) {
+        alert("삭제할 반을 먼저 지정해 주세요. (평가할 반 입력 또는 진행 중인 세션의 반)");
+        return;
+      }
+      const ok = window.confirm(
+        "정말로 " +
+          raw +
+          "의 모든 평가 데이터를 삭제하시겠습니까? 삭제된 데이터는 복구할 수 없습니다."
+      );
+      if (!ok) {
+        return;
+      }
+      clearEvalDataBtn.disabled = true;
+      db
+        .ref("evaluationResults/" + key)
+        .remove()
+        .then(function () {
+          hasAccumulatedVotes = false;
+          lastRankings = [];
+          cachedTargetClassForScores = "";
+          hideScoresResultUI();
+          closeImageModal();
+          alert("데이터가 초기화되었습니다.");
+          updateShowScoresButtonUI();
+        })
+        .catch(function (err) {
+          console.error(err);
+          alert(
+            "데이터를 삭제하지 못했습니다. Firebase 규칙(삭제 권한)과 네트워크를 확인해 주세요."
+          );
+          updateShowScoresButtonUI();
+        });
+    });
   }
 
   if (scoresRankingList) {

@@ -20,6 +20,9 @@
   const evalImageFrame = document.getElementById("evalImageFrame");
   const imgZoomLens = document.getElementById("imgZoomLens");
   const imgZoomResult = document.getElementById("imgZoomResult");
+  const studentEvalImageStatus = document.getElementById(
+    "studentEvalImageStatus"
+  );
 
   const LS_NAME = "studentDisplayName";
   const LS_ID = "studentId";
@@ -34,6 +37,16 @@
   let wasEvaluating = false;
   let prevEvalIndex = null;
   let lastPreloadKey = "";
+  /** 빠른 인덱스 전환 시 이전 로드 콜백 무시 */
+  let studentEvalImageLoadToken = 0;
+  /** 세션의 targetClass (평가 중·종료 후 스냅샷 동기화, 누적 경로 키용) */
+  let lastTargetClass = "";
+
+  function firebaseSafeKeySegment(raw) {
+    return String(raw || "")
+      .trim()
+      .replace(/[.#$\[\]/\u0000-\u001F]/g, "_");
+  }
 
   const ZOOM_LEVEL = 3;
   const zoomState = {
@@ -334,6 +347,19 @@
     voteStatusMsg.textContent = "";
   }
 
+  function setStudentEvalImageStatus(message) {
+    if (!studentEvalImageStatus) {
+      return;
+    }
+    if (message) {
+      studentEvalImageStatus.textContent = message;
+      studentEvalImageStatus.hidden = false;
+    } else {
+      studentEvalImageStatus.textContent = "";
+      studentEvalImageStatus.hidden = true;
+    }
+  }
+
   function imageUrlFor(targetClass, index) {
     const tc = (targetClass || "").trim();
     const ci = Number(index) || 1;
@@ -345,16 +371,69 @@
 
   function updateEvalImage(targetClass, index) {
     detachImageZoom();
-    const url = imageUrlFor(targetClass, index);
-    if (!url) {
+    const tc = (targetClass || "").trim();
+    const ci = Number(index) || 1;
+    const token = ++studentEvalImageLoadToken;
+
+    if (!tc) {
+      studentEvalImage.onload = null;
+      studentEvalImage.onerror = null;
       studentEvalImage.removeAttribute("src");
       studentEvalImage.alt = "대기 중";
+      studentEvalImage.classList.remove("eval-image--loading");
+      setStudentEvalImageStatus("");
       return;
     }
+
+    const url = imageUrlFor(tc, ci);
+    if (!url) {
+      return;
+    }
+
+    studentEvalImage.onload = null;
+    studentEvalImage.onerror = null;
+    studentEvalImage.classList.add("eval-image--loading");
+    studentEvalImage.alt = "불러오는 중… (" + tc + " · " + ci + "번)";
+    setStudentEvalImageStatus("이미지를 불러오는 중…");
+
+    function onLoad() {
+      if (token !== studentEvalImageLoadToken) {
+        return;
+      }
+      studentEvalImage.onload = null;
+      studentEvalImage.onerror = null;
+      setStudentEvalImageStatus("");
+      studentEvalImage.classList.remove("eval-image--loading");
+      studentEvalImage.alt = "평가할 작품: " + tc + " (" + ci + ")";
+      queueImageZoomAfterHeroLoad();
+    }
+
+    function onError() {
+      if (token !== studentEvalImageLoadToken) {
+        return;
+      }
+      studentEvalImage.onload = null;
+      studentEvalImage.onerror = null;
+      studentEvalImage.classList.remove("eval-image--loading");
+      studentEvalImage.removeAttribute("src");
+      studentEvalImage.alt = "이미지를 불러올 수 없음";
+      setStudentEvalImageStatus(
+        "이미지를 불러올 수 없습니다. img/" +
+          tc +
+          "_img_" +
+          ci +
+          ".jpg 파일이 있는지 확인해 주세요."
+      );
+    }
+
+    studentEvalImage.onload = onLoad;
+    studentEvalImage.onerror = onError;
     studentEvalImage.src = url;
-    studentEvalImage.alt =
-      "평가할 작품: " + (targetClass || "").trim() + " (" + index + ")";
-    queueImageZoomAfterHeroLoad();
+    if (studentEvalImage.complete && studentEvalImage.naturalWidth) {
+      studentEvalImage.onload = null;
+      studentEvalImage.onerror = null;
+      onLoad();
+    }
   }
 
   function preloadNextImage(targetClass, currentIndex) {
@@ -400,6 +479,37 @@
       .then(function (snap) {
         if (snap.exists()) {
           const prev = snap.val();
+          if (typeof prev === "number" && prev >= 1 && prev <= 10) {
+            scoreSlider.value = String(prev);
+            scoreValue.textContent = String(prev);
+          }
+          applySubmittedState();
+          return null;
+        }
+        const safeClass = firebaseSafeKeySegment(lastTargetClass);
+        if (!safeClass) {
+          scoreSlider.value = "5";
+          scoreValue.textContent = "5";
+          applyPendingState();
+          return null;
+        }
+        return db
+          .ref(
+            "evaluationResults/" +
+              safeClass +
+              "/" +
+              index +
+              "/" +
+              sid
+          )
+          .once("value");
+      })
+      .then(function (snap2) {
+        if (!snap2 || typeof snap2.exists !== "function") {
+          return;
+        }
+        if (snap2.exists()) {
+          const prev = snap2.val();
           if (typeof prev === "number" && prev >= 1 && prev <= 10) {
             scoreSlider.value = String(prev);
             scoreValue.textContent = String(prev);
@@ -464,6 +574,8 @@
     const st = s.status || "lobby";
     const reconnected = canReconnectWithStoredPin(s);
 
+    lastTargetClass = (s.targetClass || "").trim();
+
     if (st === "evaluating") {
       const idx = Number(s.currentIndex) || 1;
       currentIndex = idx;
@@ -517,8 +629,23 @@
 
     submitVoteBtn.disabled = true;
 
-    db.ref("currentSession/votes/" + currentIndex + "/" + sid)
-      .set(score)
+    const safeClass = firebaseSafeKeySegment(lastTargetClass);
+    const updates = {};
+    updates["currentSession/votes/" + currentIndex + "/" + sid] = score;
+    if (safeClass) {
+      updates[
+        "evaluationResults/" +
+          safeClass +
+          "/" +
+          currentIndex +
+          "/" +
+          sid
+      ] = score;
+    }
+
+    db
+      .ref()
+      .update(updates)
       .then(function () {
         applySubmittedState();
       })

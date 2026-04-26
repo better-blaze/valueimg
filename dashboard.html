@@ -35,25 +35,6 @@
           </p>
         </section>
 
-        <section
-          id="scoresActionsSection"
-          class="card card--scores-actions"
-          hidden
-        >
-          <h2 class="card__label">평가 결과</h2>
-          <button type="button" id="showScoresBtn" class="btn" disabled>
-            평점 보기
-          </button>
-        </section>
-
-        <section id="scoresResultCard" class="card card--scores-result" hidden>
-          <h2 id="scoresResultHeading" class="card__label">평점 순위</h2>
-          <ul id="scoresRankingList" class="ranking-list"></ul>
-          <button type="button" id="downloadCsvBtn" class="btn btn--secondary">
-            결과 엑셀로 다운로드
-          </button>
-        </section>
-
         <section class="card" aria-labelledby="eval-start-heading">
           <h2 id="eval-start-heading" class="card__label">평가 시작</h2>
           <div class="form-group">
@@ -79,7 +60,13 @@
       <div id="evalPanel" class="panel panel--hidden" hidden>
         <section class="card card--eval-preview" aria-labelledby="eval-img-heading">
           <h2 id="eval-img-heading" class="card__label">현재 평가 중인 이미지</h2>
-          <div class="eval-image-wrap">
+          <div class="eval-image-wrap eval-image-wrap--with-status">
+            <p
+              id="adminEvalImageStatus"
+              class="eval-image-status"
+              hidden
+              aria-live="polite"
+            ></p>
             <img
               id="adminEvalImage"
               class="eval-image"
@@ -87,21 +74,57 @@
               alt="평가 중인 작품"
             />
           </div>
-          <p
-            id="adminSubmitStatus"
-            class="eval-submit-stat"
-            aria-live="polite"
-          >
-            0명 제출 / 전체 0명
-          </p>
-          <button type="button" id="forceNextImageBtn" class="btn btn--secondary">
-            다음 이미지로 강제 이동
-          </button>
-          <button type="button" id="resetSessionEvalBtn" class="btn btn--danger">
-            세션 종료 및 초기화
-          </button>
+          <div class="eval-preview-actions">
+            <p
+              id="adminSubmitStatus"
+              class="eval-submit-stat"
+              aria-live="polite"
+            >
+              0명 제출 / 전체 0명
+            </p>
+            <div class="eval-preview-actions__buttons">
+              <button type="button" id="forceNextImageBtn" class="btn btn--secondary">
+                다음 이미지로 강제 이동
+              </button>
+              <button type="button" id="resetSessionEvalBtn" class="btn btn--danger">
+                세션 종료 및 초기화
+              </button>
+            </div>
+          </div>
         </section>
       </div>
+
+      <section id="scoresActionsSection" class="card card--scores-actions">
+        <h2 class="card__label">평가 결과 (누적)</h2>
+        <p class="scores-actions-hint">
+          입력한 반 이름 또는 진행 중인 세션의 반 기준으로 저장된 누적 평점이
+          있으면 버튼이 활성화됩니다.
+        </p>
+        <button
+          type="button"
+          id="showScoresBtn"
+          class="btn btn--scores"
+          disabled
+        >
+          평점 보기
+        </button>
+      </section>
+
+      <section id="scoresResultCard" class="card card--scores-result" hidden>
+        <h2 id="scoresResultHeading" class="card__label">평점 순위</h2>
+        <ul id="scoresRankingList" class="ranking-list"></ul>
+        <button type="button" id="downloadCsvBtn" class="btn btn--secondary" disabled>
+          결과 엑셀로 다운로드
+        </button>
+        <button
+          type="button"
+          id="clearEvalDataBtn"
+          class="btn btn--clear-eval-data"
+          disabled
+        >
+          해당 반 평가 데이터 초기화
+        </button>
+      </section>
     </main>
 
     <p class="footer-hint">
@@ -128,6 +151,12 @@
           </button>
         </div>
         <div class="modal__body">
+          <p
+            id="imageModalLoading"
+            class="modal__loading-msg"
+            hidden
+            aria-live="polite"
+          ></p>
           <img id="imageModalImg" class="modal__img" src="" alt="" />
         </div>
       </div>

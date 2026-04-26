@@ -457,12 +457,8 @@ body.page--eval-active .page__header--student .page__title {
   flex-direction: column;
   min-height: 100dvh;
   min-height: 100vh;
-  background: radial-gradient(
-      ellipse 120% 80% at 50% 20%,
-      #1a2838 0%,
-      #0f1419 55%
-    ),
-    #0a0e14;
+  /* 작품 영역은 단색만 (비네트·그라데이션 제거로 이미지가 어둡게 보이지 않도록) */
+  background: #0f1419;
 }
 
 .eval-image-stage {
@@ -485,7 +481,37 @@ body.page--eval-active .page__header--student .page__title {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  /* 그림 위에 눌러앉는 듯한 짙은 그림자 제거 */
+  box-shadow: none;
+}
+
+.eval-image-frame .eval-image-status {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0.75rem;
+  text-align: center;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.45;
+  color: #fff;
+  /* 로딩·오류 문구만 표시, 그림 위 어두운 막 없음 */
+  background: transparent;
+  text-shadow:
+    0 0 8px rgba(0, 0, 0, 0.85),
+    0 1px 2px rgba(0, 0, 0, 0.9);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* 메인 작품은 항상 원본 밝기(별도 opacity·filter 없음) */
+.eval-image--hero.eval-image--loading {
+  opacity: 1;
+  filter: none;
 }
 
 .eval-image {
@@ -494,7 +520,7 @@ body.page--eval-active .page__header--student .page__title {
   max-height: min(58vh, 520px);
   object-fit: contain;
   margin: 0 auto;
-  background: #0a0e14;
+  background: transparent;
 }
 
 .eval-image--hero {
@@ -508,6 +534,8 @@ body.page--eval-active .page__header--student .page__title {
   user-select: none;
   -webkit-user-drag: none;
   -webkit-touch-callout: none;
+  opacity: 1;
+  filter: none;
 }
 
 .img-zoom-lens {
@@ -571,11 +599,12 @@ body.page--eval-active .page__header--student .page__title {
   margin: 0 auto;
   padding: 0.5rem 0.65rem 0.45rem;
   border-radius: 999px;
-  background: rgba(22, 30, 42, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  box-shadow: 0 -8px 36px rgba(0, 0, 0, 0.35);
+  /* 하단 조작부만 어두운 반투명으로 그림과 구분 */
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  box-shadow: 0 -6px 28px rgba(0, 0, 0, 0.35);
 }
 
 .eval-floating-dock__glass--bar {
@@ -701,9 +730,72 @@ body.page--eval-active .page__header--student .page__title {
 .eval-image-wrap {
   border-radius: var(--radius);
   overflow: hidden;
-  background: var(--bg);
+  background: transparent;
   border: 1px solid var(--border);
   margin-bottom: clamp(1.25rem, 4vw, 1.75rem);
+}
+
+.eval-image-wrap--with-status {
+  position: relative;
+}
+
+.eval-image-wrap--with-status .eval-image-status {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0.75rem;
+  text-align: center;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.45;
+  color: #fff;
+  background: transparent;
+  text-shadow:
+    0 0 8px rgba(0, 0, 0, 0.85),
+    0 1px 2px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+
+.card--eval-preview .eval-image {
+  display: block;
+  width: 100%;
+  max-height: min(52vh, 480px);
+  object-fit: contain;
+  margin: 0 auto;
+  background: transparent;
+  opacity: 1;
+  filter: none;
+}
+
+.card--eval-preview .eval-image.eval-image--loading {
+  opacity: 1;
+  filter: none;
+}
+
+.eval-preview-actions {
+  margin-top: 0.25rem;
+  padding: 0.85rem 1rem 1rem;
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.eval-preview-actions__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  justify-content: center;
+  margin-top: 0.65rem;
+}
+
+.eval-preview-actions .eval-submit-stat {
+  color: var(--text);
 }
 
 .eval-submit-stat {
@@ -821,6 +913,89 @@ body.page--eval-active .page__header--student .page__title {
 .card--scores-actions,
 .card--scores-result {
   margin-top: 0;
+}
+
+.scores-actions-hint {
+  margin: 0 0 1rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.btn--scores {
+  width: 100%;
+  max-width: 20rem;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    opacity 0.2s ease,
+    transform 0.15s ease;
+}
+
+.btn--scores:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  background: var(--border);
+  color: var(--text-muted);
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.btn--scores.btn--scores-ready:not(:disabled) {
+  cursor: pointer;
+  opacity: 1;
+  font-weight: 700;
+  border-color: var(--accent);
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--accent) 22%, var(--bg)),
+    color-mix(in srgb, var(--accent) 8%, var(--surface))
+  );
+  color: var(--text);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent),
+    0 6px 20px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.btn--scores.btn--scores-ready:not(:disabled):hover {
+  filter: brightness(1.04);
+}
+
+.btn--scores.btn--scores-ready:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.btn--clear-eval-data {
+  margin-top: 0.75rem;
+  width: 100%;
+  max-width: 20rem;
+  background-color: #ff4d4d;
+  color: #fff;
+  border: 1px solid #e63939;
+  font-weight: 600;
+  transition:
+    background 0.15s ease,
+    opacity 0.15s ease,
+    transform 0.12s ease;
+}
+
+.btn--clear-eval-data:not(:disabled):hover {
+  background-color: #ff6666;
+}
+
+.btn--clear-eval-data:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.btn--clear-eval-data:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+  background-color: #5c3a3a;
+  color: rgba(255, 255, 255, 0.55);
+  border-color: var(--border);
 }
 
 .ranking-list {
@@ -947,9 +1122,25 @@ body.page--eval-active .page__header--student .page__title {
   flex: 1;
   min-height: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0.75rem;
   background: radial-gradient(ellipse at center, #141c28 0%, #0a0e14 70%);
+}
+
+.modal__loading-msg {
+  margin: 0;
+  max-width: 28rem;
+  text-align: center;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.modal__loading-msg:not([hidden]) {
+  color: var(--text);
 }
 
 .modal__img {

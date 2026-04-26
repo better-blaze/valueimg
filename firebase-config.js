@@ -1,6 +1,6 @@
 /**
  * Firebase 초기화 (Realtime Database)
- * 아래 firebaseConfig 값을 Firebase 콘솔에서 복사한 내용으로 채워 주세요.
+ * firebaseConfig는 콘솔에서 복사한 값으로 채워 주세요.
  */
 const firebaseConfig = {
   apiKey: "AIzaSyBG244nSAHs7ssLBzBYk2ZUJFioRZSc_Ms",
